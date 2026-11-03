@@ -52,4 +52,4 @@ Automatic migrations are intentionally disabled. Before enabling them, add opera
 
 ## Redis transition
 
-The runtime no longer requires a Redis server. Existing Redis deployments are not automatically imported by this change. Back up the old Redis database before switching production traffic; run a separately reviewed one-time importer before removing the old Redis service. Do not point the new app at an empty MongoDB database and assume existing Redis accounts will appear automatically.
+The runtime no longer requires a Redis server. Existing Redis deployments are not automatically imported by this change. Back up the old Redis database, preserve the exact existing TOKEN_SALT, and put the old instance into maintenance/read-only mode so records stop changing during the import. Run the one-time importer, compare source and destination key counts, then switch production traffic. Do not point the new app at an empty MongoDB database and assume existing Redis accounts will appear automatically.
