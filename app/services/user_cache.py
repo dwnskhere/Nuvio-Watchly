@@ -21,6 +21,9 @@ from app.models.profile import TasteProfile
 from app.services import cache_codec
 from app.services.mongo_store import mongo_store
 
+# Backward-compatible service alias; this now points to MongoDB, not Redis.
+redis_service = mongo_store
+
 
 class UserCacheService:
     @staticmethod
@@ -57,7 +60,7 @@ class UserCacheService:
 
     async def get_manifest(self, token: str) -> dict[str, Any] | None:
         """Get the cached manifest for a user."""
-        cached = await mongo_store.get(self._manifest_key(token))
+        cached = await redis_service.get(self._manifest_key(token))
         if not cached:
             return None
         try:
@@ -68,12 +71,12 @@ class UserCacheService:
     async def set_manifest(self, token: str, manifest: dict[str, Any]) -> None:
         """Cache the assembled manifest for a user."""
         payload = cache_codec.encode(json.dumps(manifest))
-        await mongo_store.set(self._manifest_key(token), payload, MANIFEST_CACHE_TTL_SECONDS)
+        await redis_service.set(self._manifest_key(token), payload, MANIFEST_CACHE_TTL_SECONDS)
         logger.debug(f"[{redact_token(token)}...] Cached manifest")
 
     async def invalidate_manifest(self, token: str) -> None:
         """Drop the cached manifest — settings changes alter the catalog list."""
-        await mongo_store.delete(self._manifest_key(token))
+        await redis_service.delete(self._manifest_key(token))
         logger.debug(f"[{redact_token(token)}...] Invalidated manifest cache")
 
     # Row Map Methods
@@ -85,14 +88,14 @@ class UserCacheService:
         manifest rebuild rewrites the map.
         """
         key = self._row_map_key(token, content_type)
-        cached = await mongo_store.get(key)
+        cached = await redis_service.get(key)
         if not cached:
             return {}
         try:
             mapping = json.loads(cache_codec.decode(cached))
         except json.JSONDecodeError:
             return {}
-        await mongo_store.expire(key, USER_CACHE_TTL_SECONDS)
+        await redis_service.expire(key, USER_CACHE_TTL_SECONDS)
         return mapping
 
     async def set_row_map(self, token: str, content_type: str, mapping: dict[str, str]) -> None:
@@ -110,7 +113,7 @@ class UserCacheService:
             if previous.get(slot) != mapping.get(slot):
                 await self.invalidate_catalog(token, content_type, f"watchly.{slot}")
         payload = cache_codec.encode(json.dumps(mapping))
-        await mongo_store.set(self._row_map_key(token, content_type), payload, USER_CACHE_TTL_SECONDS)
+        await redis_service.set(self._row_map_key(token, content_type), payload, USER_CACHE_TTL_SECONDS)
         logger.debug(f"[{redact_token(token)}...] Stored {len(mapping)} row slots for {content_type}")
 
     # Library Items Methods
@@ -118,13 +121,13 @@ class UserCacheService:
     async def get_library_items(self, token: str) -> LibraryCollection | None:
         """Get cached library items for a user."""
         key = self._library_items_key(token)
-        cached = await mongo_store.get(key)
+        cached = await redis_service.get(key)
 
         if cached:
             try:
                 data = json.loads(cache_codec.decode(cached))
                 # Refresh TTL on read so active users' caches stay warm.
-                await mongo_store.expire(key, USER_CACHE_TTL_SECONDS)
+                await redis_service.expire(key, USER_CACHE_TTL_SECONDS)
                 return LibraryCollection.model_validate(data)
             except (json.JSONDecodeError, Exception) as e:
                 logger.warning(f"Failed to decode cached library items for {redact_token(token)}...: {e}")
@@ -135,7 +138,7 @@ class UserCacheService:
     async def set_library_items(self, token: str, library_items: LibraryCollection) -> None:
         """Cache library items for a user."""
         key = self._library_items_key(token)
-        await mongo_store.set(
+        await redis_service.set(
             key, cache_codec.encode(library_items.model_dump_json(by_alias=True)), USER_CACHE_TTL_SECONDS
         )
         logger.debug(f"[{redact_token(token)}...] Cached library items")
@@ -150,7 +153,7 @@ class UserCacheService:
             token: User token
         """
         key = self._library_items_key(token)
-        await mongo_store.delete(key)
+        await redis_service.delete(key)
         logger.debug(f"[{redact_token(token)}...] Invalidated library items cache")
 
     # Profile Methods
@@ -167,7 +170,7 @@ class UserCacheService:
             TasteProfile instance, or None if not cached or built by older scoring
         """
         key = self._profile_key(token, content_type)
-        cached = await mongo_store.get(key)
+        cached = await redis_service.get(key)
 
         if cached:
             try:
@@ -184,10 +187,10 @@ class UserCacheService:
                     f"[{redact_token(token)}...] Dropping {content_type} profile from scoring "
                     f"v{profile.scoring_version}; rebuilding at v{PROFILE_SCORING_VERSION}"
                 )
-                await mongo_store.delete(key)
+                await redis_service.delete(key)
                 return None
 
-            await mongo_store.expire(key, USER_CACHE_TTL_SECONDS)
+            await redis_service.expire(key, USER_CACHE_TTL_SECONDS)
             return profile
 
         return None
@@ -202,7 +205,7 @@ class UserCacheService:
             profile: TasteProfile instance to cache
         """
         key = self._profile_key(token, content_type)
-        await mongo_store.set(key, cache_codec.encode(profile.model_dump_json()), USER_CACHE_TTL_SECONDS)
+        await redis_service.set(key, cache_codec.encode(profile.model_dump_json()), USER_CACHE_TTL_SECONDS)
         logger.debug(f"[{redact_token(token)}...] Cached profile for {content_type}")
 
     async def invalidate_profile(self, token: str, content_type: str) -> None:
@@ -214,7 +217,7 @@ class UserCacheService:
             content_type: Content type (movie or series)
         """
         key = self._profile_key(token, content_type)
-        await mongo_store.delete(key)
+        await redis_service.delete(key)
         logger.debug(f"[{redact_token(token)}...] Invalidated profile cache for {content_type}")
 
     # Watched Sets Methods
@@ -231,14 +234,14 @@ class UserCacheService:
             Tuple of (watched_tmdb set, watched_imdb set), or None if not cached
         """
         key = self._watched_sets_key(token, content_type)
-        cached = await mongo_store.get(key)
+        cached = await redis_service.get(key)
 
         if cached:
             try:
                 data = json.loads(cache_codec.decode(cached))
                 watched_tmdb = set(data.get("watched_tmdb", []))
                 watched_imdb = set(data.get("watched_imdb", []))
-                await mongo_store.expire(key, USER_CACHE_TTL_SECONDS)
+                await redis_service.expire(key, USER_CACHE_TTL_SECONDS)
                 return (watched_tmdb, watched_imdb)
             except (json.JSONDecodeError, KeyError, TypeError) as e:
                 logger.warning(f"Failed to decode cached watched sets for {redact_token(token)}.../{content_type}: {e}")
@@ -267,7 +270,7 @@ class UserCacheService:
             "watched_tmdb": list(watched_tmdb),
             "watched_imdb": list(watched_imdb),
         }
-        await mongo_store.set(key, cache_codec.encode(json.dumps(data)), USER_CACHE_TTL_SECONDS)
+        await redis_service.set(key, cache_codec.encode(json.dumps(data)), USER_CACHE_TTL_SECONDS)
         logger.debug(f"[{redact_token(token)}...] Cached watched sets for {content_type}")
 
     async def invalidate_watched_sets(self, token: str, content_type: str) -> None:
@@ -279,7 +282,7 @@ class UserCacheService:
             content_type: Content type (movie or series)
         """
         key = self._watched_sets_key(token, content_type)
-        await mongo_store.delete(key)
+        await redis_service.delete(key)
         logger.debug(f"[{redact_token(token)}...] Invalidated watched sets cache for {content_type}")
 
     # Combined Methods
@@ -327,7 +330,7 @@ class UserCacheService:
 
     async def get_library_buckets(self, token: str, content_type: str) -> dict[str, str] | None:
         """The bucket map the cached profile was built from, or None if unknown."""
-        cached = await mongo_store.get(self._library_buckets_key(token, content_type))
+        cached = await redis_service.get(self._library_buckets_key(token, content_type))
         if not cached:
             return None
         try:
@@ -339,11 +342,11 @@ class UserCacheService:
         """Record the bucket map the profile was just built from."""
         key = self._library_buckets_key(token, content_type)
         payload = cache_codec.encode(json.dumps(self.bucket_map(typed)))
-        await mongo_store.set(key, payload, USER_CACHE_TTL_SECONDS)
+        await redis_service.set(key, payload, USER_CACHE_TTL_SECONDS)
         logger.debug(f"[{redact_token(token)}...] Updated library buckets for {content_type}")
 
     async def invalidate_library_buckets(self, token: str, content_type: str) -> None:
-        await mongo_store.delete(self._library_buckets_key(token, content_type))
+        await redis_service.delete(self._library_buckets_key(token, content_type))
 
     async def set_profile_and_watched_sets(
         self,
@@ -405,7 +408,7 @@ class UserCacheService:
             Tuple of (catalog_data, timestamp) or None if not found
         """
         key = CATALOG_KEY.format(token=token, type=type, id=id)
-        cached = await mongo_store.get(key)
+        cached = await redis_service.get(key)
         if cached:
             try:
                 data = json.loads(cache_codec.decode(cached))
@@ -443,7 +446,7 @@ class UserCacheService:
             "data": catalog,
             "created_at": int(time.time()),
         }
-        await mongo_store.set(key, cache_codec.encode(json.dumps(wrapped_data)), ttl)
+        await redis_service.set(key, cache_codec.encode(json.dumps(wrapped_data)), ttl)
         logger.debug(f"[{redact_token(token)}...] Cached catalog for {type}/{id}")
 
     async def invalidate_catalog(self, token: str, type: str, id: str) -> None:
@@ -456,7 +459,7 @@ class UserCacheService:
             id: Catalog ID
         """
         key = CATALOG_KEY.format(token=token, type=type, id=id)
-        await mongo_store.delete(key)
+        await redis_service.delete(key)
         logger.debug(f"[{redact_token(token)}...] Invalidated catalog cache for {type}/{id}")
 
     async def invalidate_all_catalogs(self, token: str) -> None:
@@ -470,7 +473,7 @@ class UserCacheService:
             token: User token
         """
         pattern = f"watchly:catalog:{token}:*"
-        deleted_count = await mongo_store.delete_by_pattern(pattern)
+        deleted_count = await redis_service.delete_by_pattern(pattern)
         if deleted_count > 0:
             logger.debug(f"[{redact_token(token)}...] Invalidated {deleted_count} catalog cache(s)")
         else:
