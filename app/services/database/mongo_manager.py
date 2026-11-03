@@ -7,6 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 
+from bson import BSON
 from loguru import logger
 
 from app.core.config import settings
@@ -334,9 +335,19 @@ class MongoDBManager:
                 raise MongoDBError("Source shard has no user document for this account.")
             if await target["users"].find_one({"_id": token}):
                 raise MongoDBError("Destination already contains this user; refusing to overwrite it.")
+            source_cache = [doc async for doc in source["cache_entries"].find({"owner_token": token})]
+            estimated_bytes = len(BSON.encode(source_user)) + sum(len(BSON.encode(doc)) for doc in source_cache)
+            reserve_bytes = int(getattr(self.settings, "MONGODB_NEW_USER_RESERVE_BYTES", 1024 * 1024))
+            if (
+                target_capacity["used_bytes"] + estimated_bytes + reserve_bytes
+                >= target_capacity["capacity_bytes"]
+                * float(getattr(self.settings, "MONGODB_ALLOCATION_THRESHOLD", 0.80))
+            ):
+                raise NoAvailableShardError(
+                    "Destination shard does not have enough headroom for this user's data and cache."
+                )
             await target["users"].replace_one({"_id": token}, source_user, upsert=True)
             copied = True
-            source_cache = [doc async for doc in source["cache_entries"].find({"owner_token": token})]
             for doc in source_cache:
                 await target["cache_entries"].replace_one({"_id": doc["_id"]}, doc, upsert=True)
             target_user = await target["users"].find_one({"_id": token})
