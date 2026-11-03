@@ -12,10 +12,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.security import _SECRET_NESTED_FIELDS, _SECRET_SETTINGS_FIELDS, redact_token
-from app.services.mongo_store import mongo_store
-
-# Backward-compatible service alias; this now points to MongoDB, not Redis.
-redis_service = mongo_store
+from app.services.mongo_store import mongo_store as redis_service  # MongoDB-backed compatibility alias
 from app.services.user_cache import user_cache
 
 # Every Fernet token starts with this (version byte 0x80, base64).
