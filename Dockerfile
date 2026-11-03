@@ -22,6 +22,6 @@ COPY CHANGELOG.md .
 COPY pyproject.toml .
 COPY uv.lock .
 
-RUN uv sync --locked
+RUN uv sync --no-lock
 
-ENTRYPOINT ["uv", "run", "main.py"]
+ENTRYPOINT ["uv", "run", "--no-sync", "main.py"]
