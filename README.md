@@ -48,7 +48,7 @@ Everything is configured through a web page; you paste the resulting manifest UR
 
 ## How it works
 
-1. You open the `/configure` page and connect a history source (Stremio login, Trakt/Simkl via OAuth, or an MDBList API key). Your credentials are encrypted and stored in Redis under a short opaque **token**. That token is embedded in your personal manifest URL.
+1. You open the `/configure` page and connect a history source (Stremio login, Trakt/Simkl via OAuth, or an MDBList API key). Your credentials are encrypted and stored in MongoDB under a short opaque **token**. That token is embedded in your personal manifest URL.
 2. Watchly fetches your watch history from the configured source and converts it into a source-agnostic library — ratings ≥ 9 count as *loved*, 7–8.9 as *liked*, the rest as *watched*.
 3. From that library it builds a **taste profile**: a numerical fingerprint of your preferences across genres, keywords, people, eras, countries, and runtime.
 4. When Stremio requests a catalog, Watchly routes the request to the matching recommendation engine, pulls candidates from TMDB (and Simkl where available), scores them against your profile, caps them for diversity, enriches them with metadata and (optionally) poster ratings, translates titles to your language, and returns a standard Stremio catalog.
@@ -156,48 +156,12 @@ Docker is the recommended way to self-host. Watchly requires a **MongoDB** conne
 
 A Community Applications-style template lives at [`unraid/watchly.xml`](unraid/watchly.xml).
 
-1. Install **Redis** from Community Applications (any Redis container works).
+1. Create a MongoDB Atlas cluster (or use an existing MongoDB deployment).
 2. On the **Docker** tab, click **Add Container**, switch to advanced view, and set the template URL to
    `https://raw.githubusercontent.com/TimilsinaBimal/Watchly/main/unraid/watchly.xml` — or add
    `https://github.com/TimilsinaBimal/Watchly` under *Template Repositories* and pick **Watchly** from the template list.
-3. Fill in the required fields: TMDB API key, a long random token salt, the Redis URL from step 1
-   (e.g. `redis://YOUR-UNRAID-IP:6379/0`), and the host name your Stremio clients will reach the addon on.
+3. Fill in the required fields: a long random token salt, `MONGODB_URLS`, and the host name your Stremio clients will reach the addon on.
 4. Start the container and open the WebUI to configure your catalogs.
-
-## Choose a Redis
-
-Watchly stores durable account data and user-scoped cache entries in MongoDB. Redis is no longer required by the runtime.
-
-- **MongoDB Atlas:** configure one or more Atlas URLs. New users are allocated to the first configured shard below the capacity threshold.
-- **Other MongoDB deployments:** any reachable MongoDB deployment supported by PyMongo's async client can be used.
-
-Roughly how much a user costs: serving a cached row takes about 3 commands (alias lookup, warm-up check, catalog read), so a home screen of ~10 rows plus the manifest is ~35. Each row is rebuilt once a day, about 10 more commands per row. A user who opens Stremio a few times a day comes to about 150–250 commands, or 5–8K a month.
-
-| | Upstash free | Redis Cloud free (Deploy button) | Docker Redis |
-| --- | --- | --- | --- |
-| Commands | 500K / month (~60–100 users) | 100 ops/sec | no limit |
-| Data | 256 MB | 30 MB | your disk |
-| Connections | not published | 30 | no limit |
-| TLS | always on (`rediss://`) | not available on free | local network |
-| Idle database | archived after 30 days, restorable | deleted after 14 days without commands | never |
-| Next step up | pay as you go, $0.20 per 100K commands | paid plans from $5 / month | — |
-
-Sources: [Upstash pricing](https://upstash.com/docs/redis/overall/pricing), [Upstash FAQ](https://upstash.com/docs/redis/help/faq), [Redis Cloud Essentials limits](https://redis.io/docs/latest/operate/rc/subscriptions/view-essentials-subscription/essentials-plan-details/), [Redis Cloud TLS](https://redis.io/docs/latest/operate/rc/security/database-security/tls-ssl/), [Redis pricing](https://redis.io/pricing/). Checked September 2026; confirm current limits before you pick.
-
-Redis Cloud's free plan is the weaker fit on Vercel: each function instance opens up to `REDIS_MAX_CONNECTIONS` (20) connections, so two instances can exhaust its 30, and a home screen requests every row at once, which a few users together can push past 100 ops/sec. It is fine for trying Watchly out; switch to Upstash before you share the instance.
-
-### MongoDB configuration
-
-1. Create a MongoDB Atlas cluster and add your Heroku/Vercel outbound IP policy as appropriate.
-2. Copy the MongoDB connection URI and set `MONGODB_URLS` in your host's environment variables.
-3. For multiple shards, separate complete URIs with semicolons.
-4. Redeploy the application.
-
-The `rediss://` scheme turns on TLS, and redis-py handles it with no extra settings.
-
-### Capacity notes
-
-The configured storage limit is an application-level allocation threshold. See [MongoDB storage and sharding](#mongodb-storage-and-sharding) for the capacity measurement caveat and migration design.
 
 ## MongoDB storage and sharding
 
@@ -212,7 +176,7 @@ Watchly supports ordered MongoDB shards with stable per-user assignments. New ac
 Vercel detects the FastAPI app with no extra config and runs it on Python 3.12, the version `pyproject.toml` and `.python-version` pin. A running instance also serves this guide at `/self-host`.
 
 1. Click the button and pick a project name.
-2. Accept the **Redis** store to try Watchly on a free Redis Cloud database; it adds `REDIS_URL` to the project. For an instance you'll keep, skip it and [set up Upstash](#set-up-upstash) instead (see [Choose a Redis](#choose-a-redis)).
+2. Set `MONGODB_URLS` in the Vercel project's environment variables. Watchly no longer requires a Redis add-on.
 3. Fill in `TOKEN_SALT` (for example `openssl rand -hex 32`) and `HOST_NAME` (`https://<project-name>.vercel.app`), then deploy. `TMDB_API_KEY` is optional but recommended: add it under **Settings → Environment Variables** (see [Configuration reference](#configuration-reference)).
 4. If the production domain Vercel assigned differs from your `HOST_NAME`, fix it under **Settings → Environment Variables**.
 5. Redeploy from the **Deployments** tab; environment variable changes only apply to new deployments.
@@ -291,7 +255,7 @@ These are only needed if you want the corresponding feature; Watchly runs with M
 
 ## Development
 
-Dependencies are managed with [uv](https://github.com/astral-sh/uv); a `requirements.txt` is kept in sync for non-uv environments. **Python 3.12+** is required, and a running Redis is needed for most functionality.
+Dependencies are managed with [uv](https://github.com/astral-sh/uv); a `requirements.txt` is kept in sync for non-uv environments. **Python 3.12+** is required, and a reachable MongoDB instance is needed for database-backed functionality.
 
 ```bash
 # Clone
