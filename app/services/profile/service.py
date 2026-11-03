@@ -602,7 +602,7 @@ class ProfileService:
         if not await mongo_store.set_nx(lock_key, "1", 30):
             for _ in range(40):
                 await asyncio.sleep(0.25)
-                if not await redis_service.exists(lock_key):
+                if not await mongo_store.exists(lock_key):
                     break
             return await self._stored_nuvio_access_token(token, refresh_token)
 
@@ -630,7 +630,7 @@ class ProfileService:
             logger.info(f"[{redact_token(token)}] Nuvio session refreshed.")
             return new_access
         finally:
-            await redis_service.delete(lock_key)
+            await mongo_store.delete(lock_key)
 
     @staticmethod
     async def _stored_nuvio_access_token(token: str, refresh_token: str) -> str | None:
