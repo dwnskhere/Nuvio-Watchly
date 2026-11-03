@@ -53,3 +53,10 @@ Automatic migrations are intentionally disabled. Before enabling them, add opera
 ## Redis transition
 
 The runtime no longer requires a Redis server. Existing Redis deployments are not automatically imported by this change. Back up the old Redis database, preserve the exact existing TOKEN_SALT, and put the old instance into maintenance/read-only mode so records stop changing during the import. Run the one-time importer, compare source and destination key counts, then switch production traffic. Do not point the new app at an empty MongoDB database and assume existing Redis accounts will appear automatically.
+
+
+## Live integration test
+
+The default CI run skips live MongoDB tests. To enable the two-cluster integration test, add a GitHub Actions repository secret named `MONGODB_TEST_URLS` containing two disposable MongoDB URIs separated by a semicolon. The test creates uniquely named temporary data/control databases, exercises account allocation and migration, and drops those databases afterward.
+
+Optionally set `MONGODB_TEST_CONTROL_URL` to a separate disposable control-plane URI. Allow GitHub Actions runner access in the test clusters' network access lists. Never use production cluster credentials for this test.
