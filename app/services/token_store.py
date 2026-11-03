@@ -87,17 +87,17 @@ class TokenStore:
         if settings.TOKEN_TTL_SECONDS and settings.TOKEN_TTL_SECONDS > 0:
             await mongo_store.set(key, value, settings.TOKEN_TTL_SECONDS)
         else:
-            await redis_service.set(key, value)
+            await mongo_store.set(key, value)
 
     async def get_token_for_identity(self, provider: str, provider_user_id: str) -> str | None:
-        token = await redis_service.get(self._identity_key(provider, provider_user_id))
+        token = await mongo_store.get(self._identity_key(provider, provider_user_id))
         return await self.resolve_alias(token) if token else None
 
     async def set_identity(self, provider: str, provider_user_id: str, token: str) -> None:
         await self._set_with_token_ttl(self._identity_key(provider, provider_user_id), token)
 
     async def delete_identity(self, provider: str, provider_user_id: str) -> None:
-        await redis_service.delete(self._identity_key(provider, provider_user_id))
+        await mongo_store.delete(self._identity_key(provider, provider_user_id))
 
     async def resolve_alias(self, token: str) -> str:
         """Follow merge aliases to the surviving account token.
@@ -106,7 +106,7 @@ class TokenStore:
         again, so they stay short.
         """
         for _ in range(5):
-            target = await redis_service.get(f"{self.ALIAS_KEY_PREFIX}{token}")
+            target = await mongo_store.get(f"{self.ALIAS_KEY_PREFIX}{token}")
             if not target:
                 break
             token = target
@@ -147,9 +147,9 @@ class TokenStore:
         json_str = json.dumps(storage_data)
 
         if settings.TOKEN_TTL_SECONDS and settings.TOKEN_TTL_SECONDS > 0:
-            await redis_service.set(key, json_str, settings.TOKEN_TTL_SECONDS)
+            await mongo_store.set(key, json_str, settings.TOKEN_TTL_SECONDS)
         else:
-            await redis_service.set(key, json_str)
+            await mongo_store.set(key, json_str)
 
         # Settings changes alter the catalog list, so a cached manifest built from
         # the old settings must not survive the write.
@@ -221,9 +221,9 @@ class TokenStore:
         if needs_save:
             try:
                 if settings.TOKEN_TTL_SECONDS and settings.TOKEN_TTL_SECONDS > 0:
-                    await redis_service.set(redis_key, json.dumps(data), settings.TOKEN_TTL_SECONDS)
+                    await mongo_store.set(redis_key, json.dumps(data), settings.TOKEN_TTL_SECONDS)
                 else:
-                    await redis_service.set(redis_key, json.dumps(data))
+                    await mongo_store.set(redis_key, json.dumps(data))
 
                 # Invalidate cache so next read gets the migrated data
                 try:
@@ -259,7 +259,7 @@ class TokenStore:
     async def _get_user_data_cached(self, token: str) -> dict[str, Any] | None:
         logger.debug(f"[MongoDB] Cache miss. Fetching account record for {redact_token(token)}")
         key = self._format_key(token)
-        data_raw = await redis_service.get(key)
+        data_raw = await mongo_store.get(key)
 
         if not data_raw:
             return None
@@ -304,7 +304,7 @@ class TokenStore:
         if token:
             key = self._format_key(token)
 
-        await redis_service.delete(key)
+        await mongo_store.delete(key)
         # we also need to delete the cached library items, profiles and watched sets
         if token:
             try:
@@ -330,7 +330,7 @@ class TokenStore:
 
     async def count_users(self) -> int:
         """Count durable user records across all configured MongoDB shards."""
-        return await redis_service.count_users()
+        return await mongo_store.count_users()
 
 
 token_store = TokenStore()
