@@ -4,8 +4,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from loguru import logger
-
 from app.core.config import settings
 from app.services.database.mongo_manager import MongoDBManager, mongo_manager
 
