@@ -12,7 +12,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.security import _SECRET_NESTED_FIELDS, _SECRET_SETTINGS_FIELDS, redact_token
-from app.services.redis_service import redis_service
+from app.services.mongo_store import mongo_store
 from app.services.user_cache import user_cache
 
 # Every Fernet token starts with this (version byte 0x80, base64).
@@ -85,7 +85,7 @@ class TokenStore:
 
     async def _set_with_token_ttl(self, key: str, value: str) -> None:
         if settings.TOKEN_TTL_SECONDS and settings.TOKEN_TTL_SECONDS > 0:
-            await redis_service.set(key, value, settings.TOKEN_TTL_SECONDS)
+            await mongo_store.set(key, value, settings.TOKEN_TTL_SECONDS)
         else:
             await redis_service.set(key, value)
 
