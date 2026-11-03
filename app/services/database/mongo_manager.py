@@ -4,8 +4,8 @@ import asyncio
 import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from uuid import uuid4
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 from loguru import logger
 
@@ -45,6 +45,7 @@ class MongoDBManager:
     @staticmethod
     def _default_client_factory(uri: str, **kwargs: Any) -> Any:
         from pymongo import AsyncMongoClient
+
         return AsyncMongoClient(uri, **kwargs)
 
     @staticmethod
@@ -88,7 +89,9 @@ class MongoDBManager:
         urls = self.urls
         if not urls:
             raise MongoDBError("Configure MONGODB_URLS or MONGODB_URL before starting Watchly.")
-        ids = [part.strip() for part in (getattr(self.settings, "MONGODB_SHARD_IDS", "") or "").split(";") if part.strip()]
+        ids = [
+            part.strip() for part in (getattr(self.settings, "MONGODB_SHARD_IDS", "") or "").split(";") if part.strip()
+        ]
         if ids and len(ids) != len(urls):
             raise MongoDBError("MONGODB_SHARD_IDS must have one ID per MongoDB URI.")
         db_name = getattr(self.settings, "MONGODB_DATABASE_NAME", "watchly")
@@ -124,8 +127,15 @@ class MongoDBManager:
         for shard_id, shard in self.shards.items():
             await self.control_db["shard_registry"].update_one(
                 {"_id": shard_id},
-                {"$set": {"ordinal": shard["ordinal"], "database": db_name, "enabled": True, "last_seen_at": self.now()},
-                 "$setOnInsert": {"created_at": self.now()}},
+                {
+                    "$set": {
+                        "ordinal": shard["ordinal"],
+                        "database": db_name,
+                        "enabled": True,
+                        "last_seen_at": self.now(),
+                    },
+                    "$setOnInsert": {"created_at": self.now()},
+                },
                 upsert=True,
             )
         self.initialized = True
@@ -138,8 +148,10 @@ class MongoDBManager:
     @staticmethod
     def select_shard(overview: list[dict[str, Any]], order: list[str], threshold: float, reserve: int) -> str | None:
         candidates = [
-            item for item in overview
-            if item.get("eligible") and item.get("capacity_bytes", 0) > 0
+            item
+            for item in overview
+            if item.get("eligible")
+            and item.get("capacity_bytes", 0) > 0
             and item.get("used_bytes", 0) + reserve < item.get("capacity_bytes", 0) * threshold
         ]
         return min(candidates, key=lambda item: order.index(item["shard_id"]))["shard_id"] if candidates else None
@@ -154,8 +166,13 @@ class MongoDBManager:
         capacity = int(getattr(self.settings, "MONGODB_MAX_STORAGE_BYTES", 512 * 1024 * 1024))
         ratio = used / capacity if capacity else 1.0
         threshold = float(getattr(self.settings, "MONGODB_ALLOCATION_THRESHOLD", 0.80))
-        return {"shard_id": shard_id, "used_bytes": used, "capacity_bytes": capacity,
-                "ratio": ratio, "eligible": ratio < threshold}
+        return {
+            "shard_id": shard_id,
+            "used_bytes": used,
+            "capacity_bytes": capacity,
+            "ratio": ratio,
+            "eligible": ratio < threshold,
+        }
 
     async def capacity_overview(self) -> list[dict[str, Any]]:
         self._ready()
@@ -166,7 +183,13 @@ class MongoDBManager:
                 result.append(item)
                 await self.control_db["shard_registry"].update_one(
                     {"_id": shard_id},
-                    {"$set": {"last_used_bytes": item["used_bytes"], "last_ratio": item["ratio"], "last_seen_at": self.now()}},
+                    {
+                        "$set": {
+                            "last_used_bytes": item["used_bytes"],
+                            "last_ratio": item["ratio"],
+                            "last_seen_at": self.now(),
+                        }
+                    },
                 )
             except Exception as exc:
                 logger.warning(f"Could not measure MongoDB shard {shard_id}: {type(exc).__name__}")
@@ -177,7 +200,9 @@ class MongoDBManager:
         collection = self.control_db["allocation_locks"]
         now = self.now()
         try:
-            await collection.insert_one({"_id": "new-user-allocation", "owner": owner, "expires_at": now + timedelta(seconds=120)})
+            await collection.insert_one(
+                {"_id": "new-user-allocation", "owner": owner, "expires_at": now + timedelta(seconds=120)}
+            )
             return True
         except Exception as exc:
             if type(exc).__name__ != "DuplicateKeyError":
@@ -207,14 +232,24 @@ class MongoDBManager:
                 return str(current["shard_id"])
             overview = await self.capacity_overview()
             chosen = self.select_shard(
-                overview, self.order,
+                overview,
+                self.order,
                 float(getattr(self.settings, "MONGODB_ALLOCATION_THRESHOLD", 0.80)),
                 int(getattr(self.settings, "MONGODB_NEW_USER_RESERVE_BYTES", 1024 * 1024)),
             )
             if chosen is None:
-                raise NoAvailableShardError("All configured MongoDB shards reached their allocation threshold. Add another URI.")
-            await mappings.insert_one({"_id": token, "shard_id": chosen, "status": "active",
-                                       "assigned_at": self.now(), "updated_at": self.now()})
+                raise NoAvailableShardError(
+                    "All configured MongoDB shards reached their allocation threshold. Add another URI."
+                )
+            await mappings.insert_one(
+                {
+                    "_id": token,
+                    "shard_id": chosen,
+                    "status": "active",
+                    "assigned_at": self.now(),
+                    "updated_at": self.now(),
+                }
+            )
             return chosen
         finally:
             await self.control_db["allocation_locks"].delete_one({"_id": "new-user-allocation", "owner": owner})
@@ -268,15 +303,29 @@ class MongoDBManager:
         job_id, now = uuid4().hex, self.now()
         locked = await mappings.update_one(
             {"_id": token, "shard_id": source_id, "status": "active"},
-            {"$set": {"status": "migrating", "target_shard_id": target_shard_id,
-                      "migration_id": job_id, "migration_started_at": now}},
+            {
+                "$set": {
+                    "status": "migrating",
+                    "target_shard_id": target_shard_id,
+                    "migration_id": job_id,
+                    "migration_started_at": now,
+                }
+            },
         )
         if not locked.matched_count:
             raise MongoDBError("Account mapping changed or another migration is running.")
         source, target = self.shards[source_id]["db"], self.shards[target_shard_id]["db"]
         jobs = self.control_db["migration_jobs"]
-        await jobs.insert_one({"_id": job_id, "user_id": token, "source_shard_id": source_id,
-                               "target_shard_id": target_shard_id, "status": "copying", "created_at": now})
+        await jobs.insert_one(
+            {
+                "_id": job_id,
+                "user_id": token,
+                "source_shard_id": source_id,
+                "target_shard_id": target_shard_id,
+                "status": "copying",
+                "created_at": now,
+            }
+        )
         copied = False
         switched = False
         try:
@@ -296,25 +345,43 @@ class MongoDBManager:
                 raise MongoDBError("Migration verification failed; source remains authoritative.")
             result = await mappings.update_one(
                 {"_id": token, "migration_id": job_id, "status": "migrating"},
-                {"$set": {"shard_id": target_shard_id, "status": "active", "updated_at": self.now(),
-                          "migrated_at": self.now(), "previous_shard_id": source_id},
-                 "$unset": {"target_shard_id": "", "migration_id": "", "migration_started_at": ""}},
+                {
+                    "$set": {
+                        "shard_id": target_shard_id,
+                        "status": "active",
+                        "updated_at": self.now(),
+                        "migrated_at": self.now(),
+                        "previous_shard_id": source_id,
+                    },
+                    "$unset": {"target_shard_id": "", "migration_id": "", "migration_started_at": ""},
+                },
             )
             if not result.matched_count:
                 raise MongoDBError("Account mapping changed before migration commit.")
             switched = True
-            await jobs.update_one({"_id": job_id}, {"$set": {"status": "verified_and_switched", "completed_at": self.now()}})
+            await jobs.update_one(
+                {"_id": job_id}, {"$set": {"status": "verified_and_switched", "completed_at": self.now()}}
+            )
             await source["users"].delete_one({"_id": token})
             await source["cache_entries"].delete_many({"owner_token": token})
             return {"status": "completed", "job_id": job_id, "source": source_id, "target": target_shard_id}
         except Exception as exc:
             if switched:
-                await jobs.update_one({"_id": job_id}, {"$set": {"status": "cleanup_pending", "error_type": type(exc).__name__}})
-                return {"status": "completed_cleanup_pending", "job_id": job_id, "source": source_id, "target": target_shard_id}
+                await jobs.update_one(
+                    {"_id": job_id}, {"$set": {"status": "cleanup_pending", "error_type": type(exc).__name__}}
+                )
+                return {
+                    "status": "completed_cleanup_pending",
+                    "job_id": job_id,
+                    "source": source_id,
+                    "target": target_shard_id,
+                }
             await mappings.update_one(
                 {"_id": token, "migration_id": job_id, "status": "migrating"},
-                {"$set": {"status": "active", "updated_at": self.now()},
-                 "$unset": {"target_shard_id": "", "migration_id": "", "migration_started_at": ""}},
+                {
+                    "$set": {"status": "active", "updated_at": self.now()},
+                    "$unset": {"target_shard_id": "", "migration_id": "", "migration_started_at": ""},
+                },
             )
             if copied:
                 await target["users"].delete_one({"_id": token})
@@ -332,8 +399,10 @@ class MongoDBManager:
             token, target_id, job_id = mapping["_id"], mapping.get("target_shard_id"), mapping.get("migration_id")
             await self.control_db["user_shard_map"].update_one(
                 {"_id": token, "status": "migrating", "migration_id": job_id},
-                {"$set": {"status": "active", "updated_at": self.now()},
-                 "$unset": {"target_shard_id": "", "migration_id": "", "migration_started_at": ""}},
+                {
+                    "$set": {"status": "active", "updated_at": self.now()},
+                    "$unset": {"target_shard_id": "", "migration_id": "", "migration_started_at": ""},
+                },
             )
             if target_id in self.shards:
                 target = self.shards[target_id]["db"]
