@@ -16,7 +16,7 @@ from app.core.errors import register_exception_handlers
 from app.core.logging import configure_logging, register_request_id_middleware
 from app.core.security import STORED_SECRET_SENTINEL
 from app.core.settings import MAX_ITEM_ROWS, get_current_year, get_default_catalogs_for_frontend, get_default_year_range
-from app.services.redis_service import redis_service
+from app.services.mongo_store import mongo_store
 from app.services.tmdb.genre import movie_genres, series_genres
 from app.services.token_store import token_store
 
@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         )
 
     if settings.mongodb_urls:
-        await redis_service.initialize()
+        await mongo_store.initialize()
         logger.info(f"MongoDB storage initialized with {len(settings.mongodb_urls)} shard(s)")
     elif settings.APP_ENV == "production":
         raise RuntimeError("MONGODB_URLS (or MONGODB_URL) must be configured in production.")
