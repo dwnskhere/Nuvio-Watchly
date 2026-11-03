@@ -24,7 +24,7 @@ Everything is configured through a web page; you paste the resulting manifest UR
 - [Screenshots](#screenshots)
 - [Installation (Docker)](#installation-docker)
 - [Unraid](#unraid)
-- [Choose a Redis](#choose-a-redis)
+- [MongoDB storage and sharding](#mongodb-storage-and-sharding)
 - [Deploy on Vercel](#deploy-on-vercel)
 - [Configuration reference](#configuration-reference)
 - [Optional integrations](#optional-integrations)
@@ -42,9 +42,9 @@ Everything is configured through a web page; you paste the resulting manifest UR
 - **Fine-grained personalization** — discovery style (mainstream → hidden gems), release-year window, excluded genres (separately for movies and series), display language, and per-catalog enable/rename/shuffle controls.
 - **Poster ratings overlay** — optionally overlay IMDb/TMDb-style ratings on posters via [RatingPosterDB](https://ratingposterdb.com/), Top Posters, or a custom template.
 - **Bring your own keys** — supply your own TMDB, Simkl, or Gemini API keys, or rely on the server's.
-- **Secure by design** — credentials are encrypted at rest in Redis and never appear in the manifest URL, which carries only a short opaque token.
+- **Secure by design** — credentials are encrypted before being stored in MongoDB and never appear in the manifest URL, which carries only a short opaque token.
 - **Background sync** — catalogs are refreshed on a schedule so your home page is ready before you open it.
-- **Fast** — aggressive Redis caching of profiles, libraries, and rendered catalogs keeps responses quick.
+- **Fast** — TTL-managed MongoDB cache entries for profiles, libraries, and rendered catalogs keep responses quick.
 
 ## How it works
 
@@ -100,19 +100,12 @@ Find more screenshots [here](./app/static/screenshots/).
 
 ## Installation (Docker)
 
-Docker is the recommended way to self-host. Watchly requires a **Redis** instance; a server **TMDB API key** is optional but recommended.
+Docker is the recommended way to self-host. Watchly requires a **MongoDB** connection; a server **TMDB API key** is optional but recommended.
 
 1. **Create a `docker-compose.yml`:**
 
    ```yaml
    services:
-     redis:
-       image: redis:7-alpine
-       container_name: watchly-redis
-       restart: unless-stopped
-       volumes:
-         - redis_data:/data
-
      watchly:
        image: ghcr.io/timilsinabimal/watchly:latest
        container_name: watchly
@@ -121,11 +114,7 @@ Docker is the recommended way to self-host. Watchly requires a **Redis** instanc
          - "8000:8000"
        env_file:
          - .env
-       depends_on:
-         - redis
 
-   volumes:
-     redis_data:
    ```
 
 2. **Create a `.env` file** (see the [configuration reference](#configuration-reference) for all options):
@@ -138,8 +127,12 @@ Docker is the recommended way to self-host. Watchly requires a **Redis** instanc
    # Optional, recommended
    TMDB_API_KEY=your_tmdb_api_key_here
 
-   # Redis (matches the compose service name)
-   REDIS_URL=redis://redis:6379/0
+   # MongoDB (separate shard URLs with semicolons)
+   MONGODB_URLS=mongodb+srv://<user>:<password>@cluster0.example.mongodb.net/?retryWrites=true&w=majority
+   MONGODB_DATABASE_NAME=watchly
+   MONGODB_CONTROL_DATABASE_NAME=watchly_control
+   MONGODB_MAX_STORAGE_BYTES=536870912
+   MONGODB_ALLOCATION_THRESHOLD=0.80
 
    # Optional — enable Trakt / Simkl (see "Optional integrations")
    # TRAKT_CLIENT_ID=
@@ -173,10 +166,10 @@ A Community Applications-style template lives at [`unraid/watchly.xml`](unraid/w
 
 ## Choose a Redis
 
-Watchly keeps every account, cache and rendered row in Redis, so it needs one it can reach on every request.
+Watchly stores durable account data and user-scoped cache entries in MongoDB. Redis is no longer required by the runtime.
 
-- **Docker: run Redis next to Watchly.** The `redis:7-alpine` service in the compose file above costs nothing, has no command or connection limits, and never gets deleted for being idle.
-- **Vercel: use [Upstash](https://upstash.com/pricing/redis).** Its free plan fits a small instance, TLS is always on, and a free database that sits idle is archived and can be restored rather than deleted.
+- **MongoDB Atlas:** configure one or more Atlas URLs. New users are allocated to the first configured shard below the capacity threshold.
+- **Other MongoDB deployments:** any reachable MongoDB deployment supported by PyMongo's async client can be used.
 
 Roughly how much a user costs: serving a cached row takes about 3 commands (alias lookup, warm-up check, catalog read), so a home screen of ~10 rows plus the manifest is ~35. Each row is rebuilt once a day, about 10 more commands per row. A user who opens Stremio a few times a day comes to about 150–250 commands, or 5–8K a month.
 
@@ -193,18 +186,24 @@ Sources: [Upstash pricing](https://upstash.com/docs/redis/overall/pricing), [Ups
 
 Redis Cloud's free plan is the weaker fit on Vercel: each function instance opens up to `REDIS_MAX_CONNECTIONS` (20) connections, so two instances can exhaust its 30, and a home screen requests every row at once, which a few users together can push past 100 ops/sec. It is fine for trying Watchly out; switch to Upstash before you share the instance.
 
-### Set up Upstash
+### MongoDB configuration
 
-1. In the [Upstash console](https://console.upstash.com), create a Redis database. Pick the region nearest your Vercel functions; new Vercel projects run in `iad1` (Washington, D.C.), so AWS `us-east-1` is the usual choice.
-2. Open the database's **Connect** section and copy the `rediss://default:<password>@<host>:<port>` URL from the redis-cli snippet. Don't use the REST URL and token (`UPSTASH_REDIS_REST_*`, `KV_REST_API_*`): they are for Upstash's HTTP API, which Watchly's Redis client can't speak.
-3. In Vercel, open **Settings → Environment Variables** and set `REDIS_URL` to that URL.
-4. Redeploy from the **Deployments** tab.
+1. Create a MongoDB Atlas cluster and add your Heroku/Vercel outbound IP policy as appropriate.
+2. Copy the MongoDB connection URI and set `MONGODB_URLS` in your host's environment variables.
+3. For multiple shards, separate complete URIs with semicolons.
+4. Redeploy the application.
 
 The `rediss://` scheme turns on TLS, and redis-py handles it with no extra settings.
 
-### Redis Cloud (Deploy button)
+### Capacity notes
 
-The Deploy button's **Redis** store creates a free Redis Cloud database and adds `REDIS_URL` to the project for you. On the free plan, set `REDIS_MAX_CONNECTIONS=10` so two instances stay under its 30-connection limit, and remember that the database is deleted after 14 days with no commands.
+The configured storage limit is an application-level allocation threshold. See [MongoDB storage and sharding](#mongodb-storage-and-sharding) for the capacity measurement caveat and migration design.
+
+## MongoDB storage and sharding
+
+Watchly supports ordered MongoDB shards with stable per-user assignments. New accounts fill the first shard below the configured capacity threshold, then spill over to the next configured shard. Existing accounts remain on their assigned shard until an administrator initiates a verified migration. See [docs/MONGODB_SHARDING.md](docs/MONGODB_SHARDING.md) for the collection layout, capacity caveats, migration recovery, and configuration.
+
+**Important:** the capacity check measures Watchly's configured database using `dbStats`; it is not an Atlas account-wide quota API. Use one Watchly data database per Atlas cluster and monitor Atlas metrics separately.
 
 ## Deploy on Vercel
 
@@ -232,7 +231,7 @@ If you want background refreshes to run reliably, use Docker.
 
 ## Configuration reference
 
-All settings are environment variables. Only `TOKEN_SALT` and `HOST_NAME` are strictly required, plus a reachable Redis.
+All settings are environment variables. `TOKEN_SALT`, `HOST_NAME`, and at least one reachable MongoDB URI are required in production.
 
 ### Required
 
@@ -242,14 +241,19 @@ All settings are environment variables. Only `TOKEN_SALT` and `HOST_NAME` are st
 | `TOKEN_SALT` | Secret used to derive the encryption key for stored credentials. **Set a long random value** — the default `change-me` is insecure. |
 | `HOST_NAME` | Public base URL of the addon (used for manifest and OAuth callback URLs). |
 
-### Redis
+### MongoDB
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `REDIS_URL` | `redis://redis:6379/0` | Redis connection URL. Redis is required. |
-| `REDIS_MAX_CONNECTIONS` | `20` | Max Redis connections per process. |
-| `REDIS_CONNECTIONS_THRESHOLD` | `100` | Background Redis-heavy jobs back off above this many total clients. |
-| `REDIS_TOKEN_KEY` | `watchly:token:` | Key prefix for stored user tokens. |
+| `MONGODB_URLS` | — | Semicolon-separated ordered list of shard connection URIs. |
+| `MONGODB_URL` | — | Optional single-shard compatibility alias. |
+| `MONGODB_CONTROL_URL` | First shard | Optional dedicated control-plane MongoDB URI. |
+| `MONGODB_SHARD_IDS` | Derived from host | Optional semicolon-separated stable shard IDs, one per URI. |
+| `MONGODB_DATABASE_NAME` | `watchly` | Data database on each shard. |
+| `MONGODB_CONTROL_DATABASE_NAME` | `watchly_control` | Central registry and user-to-shard mapping database. |
+| `MONGODB_MAX_STORAGE_BYTES` | `536870912` | Application capacity estimate per shard (512 MiB). |
+| `MONGODB_ALLOCATION_THRESHOLD` | `0.80` | Stop allocating new users at this fraction of configured capacity. |
+| `MONGODB_NEW_USER_RESERVE_BYTES` | `1048576` | Reserved capacity required before assigning another user. |
 
 ### Optional integrations
 
@@ -278,7 +282,7 @@ All settings are environment variables. Only `TOKEN_SALT` and `HOST_NAME` are st
 
 ## Optional integrations
 
-These are only needed if you want the corresponding feature; Watchly runs fine with just TMDB + Redis.
+These are only needed if you want the corresponding feature; Watchly runs with MongoDB + TMDB.
 
 - **Trakt** — create an API app at [trakt.tv/oauth/applications](https://trakt.tv/oauth/applications). Set the redirect URI to `HOST_NAME/auth/trakt/callback` and put the client ID in `TRAKT_CLIENT_ID`. New Trakt apps use PKCE and are not issued a secret; set `TRAKT_CLIENT_SECRET` only if your app has one.
 - **Simkl** — create an app at [simkl.com/settings/developer](https://simkl.com/settings/developer). Set the redirect URI to `HOST_NAME/auth/simkl/callback` and put the credentials in `SIMKL_CLIENT_ID` / `SIMKL_CLIENT_SECRET`.
@@ -303,7 +307,7 @@ uv run main.py --dev
 uvicorn app.core.app:app --reload
 ```
 
-Create a `.env` with at least `TMDB_API_KEY`, `TOKEN_SALT`, `HOST_NAME`, and `REDIS_URL` before running. The configure UI is served at `/configure`.
+Create a `.env` with at least `TOKEN_SALT`, `HOST_NAME`, and `MONGODB_URLS` before running. The configure UI is served at `/configure`.
 
 ### Tests, linting, formatting
 
@@ -327,7 +331,7 @@ Watchly is a FastAPI service that speaks the Stremio addon protocol. The request
 2. **`app/services/recommendation/catalog_service.py`** — routes the catalog ID to a recommendation engine (Top Picks, theme, item, creators, all-loved/liked).
 3. The engine's results pass through metadata enrichment, poster-ratings overlay, translation, and serialization into a Stremio catalog.
 
-The taste-profile pipeline lives in `app/services/profile/`, all external HTTP goes through `app/core/base_client.py:BaseClient` (retries, timeouts, structured errors), and Redis (`app/services/user_cache.py`, `app/services/redis_service.py`) is the source of truth for user state.
+The taste-profile pipeline lives in `app/services/profile/`, all external HTTP goes through `app/core/base_client.py:BaseClient` (retries, timeouts, structured errors), and MongoDB (`app/services/user_cache.py`, `app/services/mongo_store.py`) is the source of truth for user state.
 
 ### Project layout
 
