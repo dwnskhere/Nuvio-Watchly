@@ -44,7 +44,9 @@ async def main() -> None:
                 skipped += 1
                 continue
             pttl = await source.pttl(key)
-            ttl = ceil(pttl / 1000) if pttl >= 0 else None
+            if pttl == -2 or pttl == 0:
+                continue
+            ttl = ceil(pttl / 1000) if pttl > 0 else None
             await mongo_store.set(key, value, ttl=ttl)
             copied += 1
             if (copied + skipped) % 100 == 0:
