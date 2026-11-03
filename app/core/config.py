@@ -62,7 +62,6 @@ class Settings(BaseSettings):
     SIMKL_CLIENT_ID: str | None = None
     SIMKL_CLIENT_SECRET: str | None = None
 
-
     @property
     def mongodb_urls(self) -> list[str]:
         urls = [value.strip() for value in self.MONGODB_URLS.split(";") if value.strip()]
