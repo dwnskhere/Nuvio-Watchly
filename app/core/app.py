@@ -42,10 +42,18 @@ async def lifespan(app: FastAPI):
             "Set the TOKEN_SALT environment variable to a strong, unique value before starting the app."
         )
 
+    if settings.mongodb_urls:
+        await redis_service.initialize()
+        logger.info(f"MongoDB storage initialized with {len(settings.mongodb_urls)} shard(s)")
+    elif settings.APP_ENV == "production":
+        raise RuntimeError("MONGODB_URLS (or MONGODB_URL) must be configured in production.")
+    else:
+        logger.warning("MongoDB is not configured; database-backed endpoints will be unavailable.")
+
     yield
     try:
         await redis_service.close()
-        logger.info("Redis client closed")
+        logger.info("MongoDB clients closed")
     except Exception as exc:
         logger.warning(f"Failed to close Redis client: {exc}")
 
