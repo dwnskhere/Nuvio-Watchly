@@ -113,15 +113,10 @@ class MongoDBManager:
             self.clients[control_url] = control_client
         self.control_db = control_client[getattr(self.settings, "MONGODB_CONTROL_DATABASE_NAME", "watchly_control")]
 
-        for name, keys in {
-            "identity_index": [("expires_at", 1)],
-            "token_aliases": [("expires_at", 1)],
-            "allocation_locks": [("expires_at", 1)],
-            "global_cache": [("expires_at", 1)],
-            "user_shard_map": [("shard_id", 1)],
-            "migration_jobs": [("created_at", 1)],
-        }.items():
-            await self.control_db[name].create_index(keys, expireAfterSeconds=0 if name in {"identity_index", "token_aliases", "allocation_locks", "global_cache"} else None)
+        for name in ("identity_index", "token_aliases", "allocation_locks", "global_cache"):
+            await self.control_db[name].create_index("expires_at", expireAfterSeconds=0)
+        await self.control_db["user_shard_map"].create_index("shard_id")
+        await self.control_db["migration_jobs"].create_index("created_at")
 
         for shard_id, shard in self.shards.items():
             await self.control_db["shard_registry"].update_one(
@@ -325,6 +320,7 @@ class MongoDBManager:
             raise
 
     async def recover_interrupted_migrations(self) -> None:
+        # A migration that never switched mappings is rolled back to its source.
         cutoff = self.now() - timedelta(minutes=15)
         cursor = self.control_db["user_shard_map"].find(
             {"status": "migrating", "migration_started_at": {"$lt": cutoff}}
@@ -343,6 +339,21 @@ class MongoDBManager:
             if job_id:
                 await self.control_db["migration_jobs"].update_one(
                     {"_id": job_id}, {"$set": {"status": "recovered_after_restart", "completed_at": self.now()}}
+                )
+
+        # If the process died after the mapping switched but before source cleanup,
+        # the destination is authoritative. Finish cleanup; never roll it back.
+        jobs = self.control_db["migration_jobs"].find({"status": {"$in": ["copying", "cleanup_pending"]}})
+        async for job in jobs:
+            mapping = await self.control_db["user_shard_map"].find_one({"_id": job["user_id"]})
+            if mapping and mapping.get("shard_id") == job["target_shard_id"]:
+                source_id = job["source_shard_id"]
+                if source_id in self.shards:
+                    source = self.shards[source_id]["db"]
+                    await source["users"].delete_one({"_id": job["user_id"]})
+                    await source["cache_entries"].delete_many({"owner_token": job["user_id"]})
+                await self.control_db["migration_jobs"].update_one(
+                    {"_id": job["_id"]}, {"$set": {"status": "completed", "completed_at": self.now()}}
                 )
 
     async def close(self) -> None:
