@@ -115,6 +115,11 @@ class MongoStoreService:
         return (await self.get(key)) is not None
 
     async def delete_by_pattern(self, pattern: str) -> int:
+        # Match the legacy Redis adapter's best-effort invalidation behavior in
+        # development/tests where no database is configured. Production startup
+        # refuses to run without MongoDB, so this path is only a safe no-op.
+        if not getattr(self.manager, "initialized", False) or self.manager.control_db is None:
+            return 0
         token = self.token_from_key(pattern)
         if token:
             db = await self.manager.database_for_user(token, for_write=True)
