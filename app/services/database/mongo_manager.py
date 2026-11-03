@@ -338,11 +338,9 @@ class MongoDBManager:
             source_cache = [doc async for doc in source["cache_entries"].find({"owner_token": token})]
             estimated_bytes = len(BSON.encode(source_user)) + sum(len(BSON.encode(doc)) for doc in source_cache)
             reserve_bytes = int(getattr(self.settings, "MONGODB_NEW_USER_RESERVE_BYTES", 1024 * 1024))
-            if (
-                target_capacity["used_bytes"] + estimated_bytes + reserve_bytes
-                >= target_capacity["capacity_bytes"]
-                * float(getattr(self.settings, "MONGODB_ALLOCATION_THRESHOLD", 0.80))
-            ):
+            if target_capacity["used_bytes"] + estimated_bytes + reserve_bytes >= target_capacity[
+                "capacity_bytes"
+            ] * float(getattr(self.settings, "MONGODB_ALLOCATION_THRESHOLD", 0.80)):
                 raise NoAvailableShardError(
                     "Destination shard does not have enough headroom for this user's data and cache."
                 )
