@@ -20,6 +20,9 @@ from app.services.profile.scoring import ScoringService
 from app.services.profile.vectorizer import ItemVectorizer
 from app.services.recommendation.filtering import RecommendationFiltering
 from app.services.mongo_store import mongo_store
+
+# Backward-compatible service alias; this now points to MongoDB, not Redis.
+redis_service = mongo_store
 from app.services.stremio.library import stremio_library_to_watch_history, watch_history_to_library_collection
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
@@ -599,10 +602,10 @@ class ProfileService:
         others wait for it and read the pair it stored.
         """
         lock_key = NUVIO_REFRESH_LOCK_KEY.format(token=token)
-        if not await mongo_store.set_nx(lock_key, "1", 30):
+        if not await redis_service.set_nx(lock_key, "1", 30):
             for _ in range(40):
                 await asyncio.sleep(0.25)
-                if not await mongo_store.exists(lock_key):
+                if not await redis_service.exists(lock_key):
                     break
             return await self._stored_nuvio_access_token(token, refresh_token)
 
@@ -630,7 +633,7 @@ class ProfileService:
             logger.info(f"[{redact_token(token)}] Nuvio session refreshed.")
             return new_access
         finally:
-            await mongo_store.delete(lock_key)
+            await redis_service.delete(lock_key)
 
     @staticmethod
     async def _stored_nuvio_access_token(token: str, refresh_token: str) -> str | None:
