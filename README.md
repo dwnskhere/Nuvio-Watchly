@@ -107,7 +107,9 @@ Docker is the recommended way to self-host. Watchly requires a **MongoDB** conne
    ```yaml
    services:
      watchly:
-       image: ghcr.io/timilsinabimal/watchly:latest
+       build:
+         context: .
+         dockerfile: Dockerfile
        container_name: watchly
        restart: unless-stopped
        ports:
@@ -154,14 +156,7 @@ Docker is the recommended way to self-host. Watchly requires a **MongoDB** conne
 
 ### Unraid
 
-A Community Applications-style template lives at [`unraid/watchly.xml`](unraid/watchly.xml).
-
-1. Create a MongoDB Atlas cluster (or use an existing MongoDB deployment).
-2. On the **Docker** tab, click **Add Container**, switch to advanced view, and set the template URL to
-   `https://raw.githubusercontent.com/TimilsinaBimal/Watchly/main/unraid/watchly.xml` — or add
-   `https://github.com/TimilsinaBimal/Watchly` under *Template Repositories* and pick **Watchly** from the template list.
-3. Fill in the required fields: a long random token salt, `MONGODB_URLS`, and the host name your Stremio clients will reach the addon on.
-4. Start the container and open the WebUI to configure your catalogs.
+**Unraid note:** the existing Unraid template still points to the upstream Redis-based container image. Do not use that template with this MongoDB branch yet. Deploy from this repository's Dockerfile until a fork-specific GHCR image and matching Unraid template are published.
 
 ## MongoDB storage and sharding
 
