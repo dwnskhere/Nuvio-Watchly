@@ -5,6 +5,7 @@ import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
+from urllib.parse import urlsplit
 
 from loguru import logger
 
