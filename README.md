@@ -171,7 +171,7 @@ Watchly supports ordered MongoDB shards with stable per-user assignments. New ac
 
 ## Deploy on Vercel
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTimilsinaBimal%2FWatchly&project-name=watchly&repository-name=watchly&env=TOKEN_SALT,HOST_NAME&envDescription=A%20long%20random%20TOKEN_SALT%20and%20HOST_NAME%20set%20to%20https%3A%2F%2F%3Cproject-name%3E.vercel.app.%20TMDB_API_KEY%20is%20optional%20but%20recommended%3B%20add%20it%20later%20under%20Settings%20%3E%20Environment%20Variables.&envLink=https%3A%2F%2Fgithub.com%2FTimilsinaBimal%2FWatchly%23deploy-on-vercel&stores=%5B%7B%22type%22%3A%22integration%22%2C%22integrationSlug%22%3A%22redis%22%2C%22productSlug%22%3A%22redis%22%7D%5D)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTimilsinaBimal%2FWatchly&project-name=watchly&repository-name=watchly&env=TOKEN_SALT,HOST_NAME,MONGODB_URLS&envDescription=A%20long%20random%20TOKEN_SALT%20and%20HOST_NAME%20set%20to%20https%3A%2F%2F%3Cproject-name%3E.vercel.app.%20TMDB_API_KEY%20is%20optional%20but%20recommended%3B%20add%20it%20later%20under%20Settings%20%3E%20Environment%20Variables.&envLink=https%3A%2F%2Fgithub.com%2FTimilsinaBimal%2FWatchly%23deploy-on-vercel)
 
 Vercel detects the FastAPI app with no extra config and runs it on Python 3.12, the version `pyproject.toml` and `.python-version` pin. A running instance also serves this guide at `/self-host`.
 
