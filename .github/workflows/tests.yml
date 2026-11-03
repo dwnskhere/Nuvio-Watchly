@@ -1,11 +1,9 @@
 name: Tests
-
 on:
   push:
     branches: [main, stable, "feat/**"]
   pull_request:
     branches: [main, stable]
-
 jobs:
   test:
     runs-on: ubuntu-latest
