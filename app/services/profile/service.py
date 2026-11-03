@@ -19,7 +19,7 @@ from app.services.profile.sampling import sample_items
 from app.services.profile.scoring import ScoringService
 from app.services.profile.vectorizer import ItemVectorizer
 from app.services.recommendation.filtering import RecommendationFiltering
-from app.services.redis_service import redis_service
+from app.services.mongo_store import mongo_store
 from app.services.stremio.library import stremio_library_to_watch_history, watch_history_to_library_collection
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
@@ -599,7 +599,7 @@ class ProfileService:
         others wait for it and read the pair it stored.
         """
         lock_key = NUVIO_REFRESH_LOCK_KEY.format(token=token)
-        if not await redis_service.set_nx(lock_key, "1", 30):
+        if not await mongo_store.set_nx(lock_key, "1", 30):
             for _ in range(40):
                 await asyncio.sleep(0.25)
                 if not await redis_service.exists(lock_key):
