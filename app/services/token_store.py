@@ -311,6 +311,10 @@ class TokenStore:
                 await user_cache.invalidate_all_user_data(token)
             except Exception as e:
                 logger.warning(f"Failed to invalidate all user data for {redact_token(token)}: {e}")
+            try:
+                await mongo_store.unassign_user(token)
+            except Exception as e:
+                logger.warning(f"Failed to remove shard assignment for {redact_token(token)}: {e}")
 
         # Invalidate async LRU cache so future reads reflect deletion
         try:
