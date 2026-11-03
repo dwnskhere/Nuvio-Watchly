@@ -21,4 +21,6 @@ jobs:
           APP_ENV: development
           TOKEN_SALT: ci-test-secret-not-for-production
           TMDB_API_KEY: ci-placeholder-tmdb-key
+          MONGODB_TEST_URLS: ${{ secrets.MONGODB_TEST_URLS }}
+          MONGODB_TEST_CONTROL_URL: ${{ secrets.MONGODB_TEST_CONTROL_URL }}
         run: PYTHONPATH=. pytest -q
