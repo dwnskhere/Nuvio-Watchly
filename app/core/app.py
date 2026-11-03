@@ -52,7 +52,7 @@ async def lifespan(app: FastAPI):
 
     yield
     try:
-        await redis_service.close()
+        await mongo_store.close()
         logger.info("MongoDB clients closed")
     except Exception as exc:
         logger.warning(f"Failed to close MongoDB clients: {exc}")
