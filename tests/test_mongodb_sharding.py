@@ -11,7 +11,9 @@ def test_shard_id_is_stable_when_credentials_rotate():
     assert MongoDBManager.shard_id_for_url(first) == MongoDBManager.shard_id_for_url(rotated)
     assert MongoDBManager.shard_id_for_url(first) != MongoDBManager.shard_id_for_url(other)
     # Credentials are optional in local/managed MongoDB connection strings.
-    assert MongoDBManager.shard_id_for_url("mongodb://cluster-c.example.net/watchly") != MongoDBManager.shard_id_for_url("mongodb://cluster-d.example.net/watchly")
+    assert MongoDBManager.shard_id_for_url(
+        "mongodb://cluster-c.example.net/watchly"
+    ) != MongoDBManager.shard_id_for_url("mongodb://cluster-d.example.net/watchly")
 
 
 def test_allocator_fills_shards_in_configured_order():
@@ -35,10 +37,14 @@ def test_all_current_user_cache_key_formats_resolve_to_owner():
     store = MongoStoreService(manager=SimpleNamespace(), settings_obj=SimpleNamespace(REDIS_TOKEN_KEY="watchly:token:"))
     token = "opaque_token-123"
     keys = [
-        f"watchly:library_items:{token}", f"watchly:nuvio_refresh:{token}",
-        f"watchly:profile:{token}:movie", f"watchly:watched_sets:{token}:series",
-        f"watchly:catalog:{token}:movie:watchly.rec", f"watchly:manifest:1.17.2:{token}",
-        f"watchly:rowmap:v1:{token}:movie", f"watchly:library_buckets:v1:{token}:series",
+        f"watchly:library_items:{token}",
+        f"watchly:nuvio_refresh:{token}",
+        f"watchly:profile:{token}:movie",
+        f"watchly:watched_sets:{token}:series",
+        f"watchly:catalog:{token}:movie:watchly.rec",
+        f"watchly:manifest:1.17.2:{token}",
+        f"watchly:rowmap:v1:{token}:movie",
+        f"watchly:library_buckets:v1:{token}:series",
     ]
     assert all(store.token_from_key(key) == token for key in keys)
     assert store.token_from_key("watchly:identity:trakt:alice") is None
@@ -122,9 +128,7 @@ def test_mongo_store_routes_user_records_and_cache_entries():
         await store.set(f"watchly:token:{token}", '{"authKey":"encrypted"}')
         await store.set(f"watchly:profile:{token}:movie", '{"score":1}', ttl=60)
         user = await manager.data_db["users"].find_one({"_id": token})
-        cache = await manager.data_db["cache_entries"].find_one(
-            {"_id": f"watchly:profile:{token}:movie"}
-        )
+        cache = await manager.data_db["cache_entries"].find_one({"_id": f"watchly:profile:{token}:movie"})
         assert user["value"] == '{"authKey":"encrypted"}'
         assert cache["owner_token"] == token
         assert await store.get(f"watchly:token:{token}") == '{"authKey":"encrypted"}'
