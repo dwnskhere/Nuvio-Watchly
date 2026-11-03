@@ -147,9 +147,7 @@ class MongoStoreService:
         except Exception as exc:
             if type(exc).__name__ != "DuplicateKeyError":
                 raise
-        result = await collection.update_one(
-            {"_id": identity, "expires_at": {"$lte": self._now()}}, {"$set": doc}
-        )
+        result = await collection.update_one({"_id": identity, "expires_at": {"$lte": self._now()}}, {"$set": doc})
         return bool(result.modified_count)
 
     async def count_users(self) -> int:
