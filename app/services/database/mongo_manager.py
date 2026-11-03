@@ -175,14 +175,14 @@ class MongoDBManager:
         collection = self.control_db["allocation_locks"]
         now = self.now()
         try:
-            await collection.insert_one({"_id": "new-user-allocation", "owner": owner, "expires_at": now + timedelta(seconds=30)})
+            await collection.insert_one({"_id": "new-user-allocation", "owner": owner, "expires_at": now + timedelta(seconds=120)})
             return True
         except Exception as exc:
             if type(exc).__name__ != "DuplicateKeyError":
                 raise
         result = await collection.update_one(
             {"_id": "new-user-allocation", "expires_at": {"$lte": now}},
-            {"$set": {"owner": owner, "expires_at": now + timedelta(seconds=30)}},
+            {"$set": {"owner": owner, "expires_at": now + timedelta(seconds=120)}},
         )
         return bool(result.modified_count)
 
