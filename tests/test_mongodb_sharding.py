@@ -10,6 +10,8 @@ def test_shard_id_is_stable_when_credentials_rotate():
     other = "mongodb+srv://user:pass@cluster-b.example.net/watchly?retryWrites=true"
     assert MongoDBManager.shard_id_for_url(first) == MongoDBManager.shard_id_for_url(rotated)
     assert MongoDBManager.shard_id_for_url(first) != MongoDBManager.shard_id_for_url(other)
+    # Credentials are optional in local/managed MongoDB connection strings.
+    assert MongoDBManager.shard_id_for_url("mongodb://cluster-c.example.net/watchly") != MongoDBManager.shard_id_for_url("mongodb://cluster-d.example.net/watchly")
 
 
 def test_allocator_fills_shards_in_configured_order():
