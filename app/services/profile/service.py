@@ -19,10 +19,7 @@ from app.services.profile.sampling import sample_items
 from app.services.profile.scoring import ScoringService
 from app.services.profile.vectorizer import ItemVectorizer
 from app.services.recommendation.filtering import RecommendationFiltering
-from app.services.mongo_store import mongo_store
-
-# Backward-compatible service alias; this now points to MongoDB, not Redis.
-redis_service = mongo_store
+from app.services.mongo_store import mongo_store as redis_service  # MongoDB-backed compatibility alias
 from app.services.stremio.library import stremio_library_to_watch_history, watch_history_to_library_collection
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
