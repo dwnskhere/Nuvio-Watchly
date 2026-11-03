@@ -49,7 +49,9 @@ class MongoDBManager:
 
     @staticmethod
     def shard_id_for_url(uri: str) -> str:
-        host = uri.rsplit("@", 1)[-1].split("/", 1)[0].split("?", 1)[0].lower()
+        host = urlsplit(uri).netloc.rsplit("@", 1)[-1].lower()
+        if not host:
+            raise MongoDBError("Invalid MongoDB URI: host is missing.")
         return "mongo-" + hashlib.sha256(host.encode()).hexdigest()[:12]
 
     @property
