@@ -4,7 +4,6 @@ import json
 import secrets
 from typing import Any
 
-import redis.asyncio as redis
 from async_lru import alru_cache
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
@@ -13,7 +12,7 @@ from loguru import logger
 
 from app.core.config import settings
 from app.core.security import _SECRET_NESTED_FIELDS, _SECRET_SETTINGS_FIELDS, redact_token
-from app.services.redis_service import redis_service
+from app.services.mongo_store import mongo_store as redis_service  # MongoDB-backed compatibility alias
 from app.services.user_cache import user_cache
 
 # Every Fernet token starts with this (version byte 0x80, base64).
@@ -21,7 +20,7 @@ FERNET_PREFIX = "gAAAAA"
 
 
 class TokenStore:
-    """Redis-backed store for user credentials and auth tokens."""
+    """MongoDB-backed store for encrypted user credentials and auth tokens."""
 
     KEY_PREFIX = settings.REDIS_TOKEN_KEY
     # provider identity (stremio user id / trakt slug / simkl account id) -> account token
@@ -258,7 +257,7 @@ class TokenStore:
     # observe the local cache invalidation (e.g. multi-worker deployments).
     @alru_cache(maxsize=2000, ttl=300)
     async def _get_user_data_cached(self, token: str) -> dict[str, Any] | None:
-        logger.debug(f"[REDIS] Cache miss. Fetching data from redis for {token}")
+        logger.debug(f"[MongoDB] Cache miss. Fetching account record for {redact_token(token)}")
         key = self._format_key(token)
         data_raw = await redis_service.get(key)
 
@@ -312,6 +311,10 @@ class TokenStore:
                 await user_cache.invalidate_all_user_data(token)
             except Exception as e:
                 logger.warning(f"Failed to invalidate all user data for {redact_token(token)}: {e}")
+            try:
+                await redis_service.unassign_user(token)
+            except Exception as e:
+                logger.warning(f"Failed to remove shard assignment for {redact_token(token)}: {e}")
 
         # Invalidate async LRU cache so future reads reflect deletion
         try:
@@ -326,25 +329,8 @@ class TokenStore:
             logger.warning(f"Failed to invalidate user data cache during token deletion: {e}")
 
     async def count_users(self) -> int:
-        """Count total users by scanning Redis keys with the configured prefix.
-
-        Cached for 12 hours to avoid frequent Redis scans.
-        """
-        try:
-            client = await redis_service.get_client()
-        except (redis.RedisError, OSError) as exc:
-            logger.warning(f"Cannot count users; Redis unavailable: {exc}")
-            return 0
-
-        pattern = f"{self.KEY_PREFIX}*"
-        total = 0
-        try:
-            async for _ in client.scan_iter(match=pattern, count=500):
-                total += 1
-        except (redis.RedisError, OSError) as exc:
-            logger.warning(f"Failed to scan for user count: {exc}")
-            return 0
-        return total
+        """Count durable user records across all configured MongoDB shards."""
+        return await redis_service.count_users()
 
 
 token_store = TokenStore()

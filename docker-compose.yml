@@ -1,8 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: watchly-redis
-    restart: unless-stopped
   watchly:
     build:
       context: .
@@ -11,10 +7,5 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8000"
-      # some macos users need to use 127.0.0.1:8000:8000 to access the app on localhost due to IPV6 issues
     env_file:
       - .env
-    volumes:
-      - ./:/app
-    depends_on:
-      - redis

@@ -17,13 +17,16 @@ dependencies = [
     "pydantic>=2.5.0",
     "pydantic-settings>=2.1.0",
     "pydantic-core>=2.41.5",
-    "redis>=5.0.1",
+    "pymongo[srv]>=4.9.0",
     "tomli>=2.3.0",
     "uvicorn[standard]>=0.24.0",
     "jinja2>=3.1.6",
     "pre-commit>=4.4.0",
     "pydantic-ai-slim[anthropic,google,openai]>=1.107.0",
 ]
+
+[project.optional-dependencies]
+redis-migration = ["redis>=5.0.1"]
 
 [tool.setuptools.dynamic]
 version = { attr = "app.core.version.__version__" }

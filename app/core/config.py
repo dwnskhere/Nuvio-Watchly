@@ -23,13 +23,20 @@ class Settings(BaseSettings):
     PORT: int = 8000
     ADDON_ID: str = "com.bimal.watchly"
     ADDON_NAME: str = "Watchly"
-    REDIS_URL: str = "redis://redis:6379/0"
-    # Maximum number of connections Redis client will open per process
-    # Set conservatively to avoid unbounded connection growth under high concurrency
-    REDIS_MAX_CONNECTIONS: int = 20
-    # If total connected clients reported by Redis exceeds this, background
-    # Redis-heavy jobs will back off. Tune according to your Redis capacity.
-    REDIS_CONNECTIONS_THRESHOLD: int = 100
+    # Semicolon-separated because replica-set URIs may contain commas.
+    # MONGODB_URL remains a convenient single-shard alias.
+    MONGODB_URLS: str = ""
+    MONGODB_URL: str | None = None
+    MONGODB_CONTROL_URL: str | None = None
+    MONGODB_SHARD_IDS: str = ""
+    MONGODB_DATABASE_NAME: str = "watchly"
+    MONGODB_CONTROL_DATABASE_NAME: str = "watchly_control"
+    MONGODB_MAX_STORAGE_BYTES: int = 512 * 1024 * 1024
+    MONGODB_ALLOCATION_THRESHOLD: float = 0.80
+    MONGODB_NEW_USER_RESERVE_BYTES: int = 1024 * 1024
+    MONGODB_MAX_POOL_SIZE: int = 20
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
+    MONGODB_CONNECT_TIMEOUT_MS: int = 5000
     REDIS_TOKEN_KEY: str = "watchly:token:"
     TOKEN_SALT: str = "change-me"
     TOKEN_TTL_SECONDS: int = 0  # 0 = never expire
@@ -54,6 +61,13 @@ class Settings(BaseSettings):
     TRAKT_CLIENT_SECRET: str | None = None
     SIMKL_CLIENT_ID: str | None = None
     SIMKL_CLIENT_SECRET: str | None = None
+
+    @property
+    def mongodb_urls(self) -> list[str]:
+        urls = [value.strip() for value in self.MONGODB_URLS.split(";") if value.strip()]
+        if self.MONGODB_URL and self.MONGODB_URL.strip() and self.MONGODB_URL.strip() not in urls:
+            urls.insert(0, self.MONGODB_URL.strip())
+        return list(dict.fromkeys(urls))
 
 
 settings = Settings()

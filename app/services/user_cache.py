@@ -19,7 +19,7 @@ from app.core.version import __version__
 from app.models.library import LibraryCollection
 from app.models.profile import TasteProfile
 from app.services import cache_codec
-from app.services.redis_service import redis_service
+from app.services.mongo_store import mongo_store as redis_service  # MongoDB-backed compatibility alias
 
 
 class UserCacheService:

@@ -13,13 +13,13 @@ from app.models.history import WatchHistory
 from app.models.library import LibraryCollection
 from app.models.profile import TasteProfile
 from app.services.mdblist import mdblist_service
+from app.services.mongo_store import mongo_store as redis_service  # MongoDB-backed compatibility alias
 from app.services.nuvio import nuvio_service
 from app.services.profile.builder import ProfileBuilder
 from app.services.profile.sampling import sample_items
 from app.services.profile.scoring import ScoringService
 from app.services.profile.vectorizer import ItemVectorizer
 from app.services.recommendation.filtering import RecommendationFiltering
-from app.services.redis_service import redis_service
 from app.services.stremio.library import stremio_library_to_watch_history, watch_history_to_library_collection
 from app.services.tmdb.service import get_tmdb_service
 from app.services.token_store import token_store
